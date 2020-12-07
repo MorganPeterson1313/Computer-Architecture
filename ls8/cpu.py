@@ -2,43 +2,160 @@
 
 import sys
 
+HLT  = 0b00000001
+LDI  = 0b10000010
+PRN  = 0b01000111
+MUL  = 0b10100010
+PUSH = 0b01000101
+POP  = 0b01000110
+CALL = 0b01010000
+RET  = 0b00010001
+ADD  = 0b10100000
+
 class CPU:
     """Main CPU class."""
 
     def __init__(self):
         """Construct a new CPU."""
-        pass
+       self.ram = [None] * 256
+
+        self.reg = [None] * 8
+
+        # stack pointer
+        self.reg[7] = 0xF4
+
+        # pc: program counter
+        self.pc = 0
+        self.running = True
+
+        self.cache = {}
+        self.cache[HLT] = self.hlt
+        self.cache[LDI] = self.ldi
+        self.cache[PRN] = self.prn
+        self.cache[PUSH] = self.push
+        self.cache[POP] = self.pop
+        self.cache[CALL] = self.call
+        self.cache[RET] = self.ret
+
+    def hlt(self, _, __):
+        self.running = False
+
+
+    def ldi(self, operand_a, operand_b):
+        # put 8 in register 0
+        self.reg[operand_a] = operand_b
+
+
+    def prn(self, operand_a, _):
+        # PRN R0
+        # print register 0
+        print(self.reg[operand_a])
+
+
+    def push(self, operand_a, _):
+        # Push the value in the given register on the stack.
+        # stack_pointer: stack pointer
+        # decrement stack pointer
+        # look ahead in ram to get given register number
+        # get value from register 
+        # copy into stack
+        self.reg[7] -= 1
+        stack_pointer = self.reg[7]
+
+        # operand_a is address of register holding the value
+        value = self.reg[operand_a]
+
+        # put into memory
+        self.ram[stack_pointer] = value
+
+        # shorter version
+        # self.ram[stack_pointer] = self.reg[address]
+
+
+    def pop(self, operand_a, _):
+        # Pop the value at the top of the stack into the given register
+        # stack_pointer: stack pointer
+        # get value of last position of stack_pointer
+        stack_pointer = self.reg[7]
+        value = self.ram[stack_pointer]
+        # copy into the register
+        self.reg[operand_a] = value
+        # increment stack_pointer
+        self.reg[7] += 1
+
+
+    def call(self, operand_a, _):
+        # decrement stack_pointer
+        self.reg[7] -= 1
+        stack_pointer = self.reg[7]
+        # get address for RET
+        return_address = self.pc + 2
+        # put in memory
+        self.ram[stack_pointer] = return_address
+
+        destination_address = self.reg[operand_a]
+        self.pc = destination_address
+
+
+    # pop value from top of stack
+    def ret(self, _, __):
+        # pop from stack
+        stack_pointer = self.reg[7]
+        value = self.ram[stack_pointer]
+        # set pc to value popped from stack
+        self.pc = value
+        # increment stack_pointer
+        self.reg[7] += 1
+
+
+    # accept the address to read and return the value stored there
+    # mar: Memory address register, the address that is being read
+    def ram_read(self, mar):
+        return self.ram[mar]
+
+    # accept a value to write, and the address to write it to.
+    # mar: Memory address register, the address that is being read
+    # mdr: Memory data register, the data that is being written
+    def ram_write(self, mar, mdr):
+        self.ram[mar] = mdr
 
     def load(self):
         """Load a program into memory."""
 
+        if len(sys.argv) < 2:
+            print("Need a file to open.")
+            sys.exit()
+
         address = 0
 
-        # For now, we've just hardcoded a program:
+        try:
+            with open(sys.argv[1]) as file:
+                for line in file:
+                    comment_split = line.split("#")
+                    possible_num = comment_split[0]
 
-        program = [
-            # From print8.ls8
-            0b10000010, # LDI R0,8
-            0b00000000,
-            0b00001000,
-            0b01000111, # PRN R0
-            0b00000000,
-            0b00000001, # HLT
-        ]
+                    if possible_num == '':
+                        continue
 
-        for instruction in program:
-            self.ram[address] = instruction
-            address += 1
+                    if possible_num[0] == '1' or possible_num[0] == '0':
+                        num = possible_num[:8]
+                        self.ram[address] = int(num, 2)
+                        address += 1
+        except FileNotFoundError:
+            print("File not found")
+            sys.exit()
 
 
     def alu(self, op, reg_a, reg_b):
         """ALU operations."""
 
-        if op == "ADD":
+        if op == MUL:
+            self.reg[reg_a] *= self.reg[reg_b]
+        elif op == ADD:
             self.reg[reg_a] += self.reg[reg_b]
-        #elif op == "SUB": etc
         else:
             raise Exception("Unsupported ALU operation")
+
 
     def trace(self):
         """
@@ -62,4 +179,28 @@ class CPU:
 
     def run(self):
         """Run the CPU."""
-        pass
+
+        while self.running:
+            # ir: instruction register
+            ir = self.ram_read(self.pc)
+
+            # extract operands
+            operand_a = self.ram_read(self.pc + 1)
+            operand_b = self.ram_read(self.pc + 2)
+
+            # update program counter
+            # look at first two bits of instruction
+            # if the command sets the PC directly, then don't
+            sets_pc_directly = (ir >> 4) & 0b0001
+
+            if not sets_pc_directly:
+                self.pc += 1 + (ir >> 6)
+
+            # if ir is an ALU command, send to ALU
+            is_alu_command = ((ir >> 5) & 0b001) == 1
+
+            if is_alu_command:
+                self.alu(ir, operand_a, operand_b)
+
+            else:
+                self.cache[ir](operand_a, operand_b)
