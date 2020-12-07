@@ -106,7 +106,7 @@ value of the stack pointer.
 ## Step 3: Implement the core of `CPU`'s `run()` method
 
 This is the workhorse function of the entire processor. It's the most difficult
-part to write.
+part to write. Im going to enjoy figuring this out
 
 It needs to read the memory address that's stored in register `PC`, and store
 that result in `IR`, the _Instruction Register_. This can just be a local
